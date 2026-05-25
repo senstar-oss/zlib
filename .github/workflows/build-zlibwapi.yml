@@ -1,0 +1,62 @@
+name: Build zlibwapi
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. v1.2.13-senstar.1)'
+        required: true
+        type: string
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce # v2.0.0
+
+      - name: Build zlibwapi x64 Release
+        run: |
+          msbuild contrib/vstudio/vc14/zlibvc.sln `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /t:zlibvc `
+            /p:PlatformToolset=v143 `
+            /p:WindowsTargetPlatformVersion=10.0 `
+            /m
+
+      - name: Package artifacts
+        run: |
+          $out = "zlibwapi-windows-x86_64-${{ inputs.version }}"
+          New-Item -ItemType Directory -Path "$out/lib", "$out/bin", "$out/include" -Force
+          Copy-Item "contrib/vstudio/vc14/x64/ZlibDllRelease/zlibwapi.dll" "$out/bin/"
+          Copy-Item "contrib/vstudio/vc14/x64/ZlibDllRelease/zlibwapi.lib" "$out/lib/"
+          Copy-Item "contrib/vstudio/vc14/x64/ZlibDllRelease/zlibwapi.pdb" "$out/bin/"
+          Copy-Item "zlib.h" "$out/include/"
+          Copy-Item "zconf.h" "$out/include/"
+          Compress-Archive -Path $out -DestinationPath "$out.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: zlibwapi-windows-x86_64
+          path: "zlibwapi-windows-x86_64-${{ inputs.version }}.zip"
+
+      - name: Create release
+        if: inputs.create_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.version }}" `
+            "zlibwapi-windows-x86_64-${{ inputs.version }}.zip" `
+            --title "zlibwapi ${{ inputs.version }}" `
+            --notes "Windows x64 stdcall build of zlibwapi.dll (ZLIB_WINAPI) from zlib ${{ inputs.version }}."
